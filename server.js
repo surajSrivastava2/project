@@ -4,11 +4,17 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const jwt = require("jsonwebtoken");
+require("dotenv").config();
+
+const OpenAI = require("openai");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const SECRET = "smartstudent_secret";
+// ================= OPENAI SETUP =================
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 // ================= MIDDLEWARE =================
 app.use(cors());
@@ -20,7 +26,7 @@ app.use(express.static("public"));
 
 if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
-// ================= FILE STORAGE =================
+// ================= MULTER =================
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) =>
@@ -29,7 +35,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// ================= SIMPLE USER DB =================
+// ================= USERS DB =================
 const USERS_FILE = "users.json";
 
 function getUsers() {
@@ -41,36 +47,30 @@ function saveUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
-// ================= AUTH =================
+// ================= JWT =================
+const SECRET = "smartstudent_secret";
 
-// SIGNUP
+// ================= AUTH =================
 app.post("/api/signup", (req, res) => {
   const { email, password, name } = req.body;
 
   let users = getUsers();
-
   if (users.find(u => u.email === email)) {
-    return res.status(400).json({ error: "User already exists" });
+    return res.status(400).json({ error: "User exists" });
   }
 
-  const newUser = { email, password, name };
-  users.push(newUser);
+  users.push({ email, password, name });
   saveUsers(users);
 
   const token = jwt.sign({ email, name }, SECRET);
 
-  res.json({
-    token,
-    user: { email, name }
-  });
+  res.json({ token, user: { email, name } });
 });
 
-// LOGIN
 app.post("/api/login", (req, res) => {
   const { email, password } = req.body;
 
   const users = getUsers();
-
   const user = users.find(
     u => u.email === email && u.password === password
   );
@@ -81,91 +81,95 @@ app.post("/api/login", (req, res) => {
 
   const token = jwt.sign({ email: user.email, name: user.name }, SECRET);
 
-  res.json({
-    token,
-    user: { email: user.email, name: user.name }
-  });
+  res.json({ token, user: { email: user.email, name: user.name } });
 });
 
-// ================= ATTENDANCE (MATCH FRONTEND: photo) =================
+// ================= REAL AI FUNCTION =================
+async function askAI(prompt) {
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are SmartStudent AI, a helpful academic tutor for students."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ]
+  });
+
+  return response.choices[0].message.content;
+}
+
+// ================= CHAT AI =================
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { message } = req.body;
+    const reply = await askAI(message);
+    res.json({ reply });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= DOUBT SOLVER =================
+app.post("/api/doubt", async (req, res) => {
+  try {
+    const { query } = req.body;
+    const result = await askAI(
+      `Explain this doubt in simple steps for a student: ${query}`
+    );
+    res.json({ result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= NOTES SUMMARIZER =================
+app.post("/api/notes", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file" });
+
+    const result = await askAI(
+      "Summarize study notes in simple bullet points for revision"
+    );
+
+    res.json({ result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= QUIZ GENERATOR =================
+app.post("/api/quiz", async (req, res) => {
+  try {
+    const { topic } = req.body;
+
+    const result = await askAI(
+      `Create a 5 question MCQ quiz on topic: ${topic}`
+    );
+
+    res.json({ result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ================= ATTENDANCE =================
 app.post("/api/attendance", upload.single("photo"), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No photo uploaded" });
   }
 
   res.json({
-    result: "📸 Attendance processed: 18 students detected (AI mock)"
+    result: "Attendance processed using AI vision (mock logic placeholder)"
   });
 });
 
-// ================= NOTES (MATCH FRONTEND: file) =================
-app.post("/api/notes", upload.single("file"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
-  }
-
-  res.json({
-    result:
-      "📝 Notes Summary:\n- Key concepts extracted\n- Important points highlighted\n- Revision ready notes generated (mock AI)"
-  });
-});
-
-// ================= QUIZ GENERATOR =================
-app.post("/api/quiz", (req, res) => {
-  const { topic } = req.body;
-
-  if (!topic) {
-    return res.status(400).json({ error: "Topic required" });
-  }
-
-  res.json({
-    result: `
-📘 Quiz on: ${topic}
-
-1. What is ${topic}?
-A) Option A
-B) Option B
-C) Option C
-D) Option D
-
-2. Explain ${topic} in short.
-
-3. Write 2 examples of ${topic}.
-
-🤖 Generated successfully
-`
-  });
-});
-
-// ================= DOUBT SOLVER =================
-app.post("/api/doubt", (req, res) => {
-  const { query } = req.body;
-
-  if (!query) {
-    return res.status(400).json({ error: "Query required" });
-  }
-
-  res.json({
-    result: `
-🤖 Answer:
-
-Your Question: ${query}
-
-Step 1: Understand concept
-Step 2: Apply logic
-Step 3: Final explanation
-
-(This is AI mock response — can be upgraded to GPT later)
-`
-  });
-});
-
-// ================= HEALTH =================
-app.get("/health", (req, res) => {
-  res.json({ status: "OK", server: "SmartStudent AI Backend" });
-});
-
-// ================= FILE LIST =================
+// ================= FILES =================
 app.get("/api/files", (req, res) => {
   const files = fs.readdirSync("uploads").map(f => ({
     name: f,
@@ -175,7 +179,6 @@ app.get("/api/files", (req, res) => {
   res.json({ files });
 });
 
-// ================= DELETE FILE =================
 app.delete("/api/files/:name", (req, res) => {
   const filePath = path.join("uploads", req.params.name);
 
@@ -184,10 +187,15 @@ app.delete("/api/files/:name", (req, res) => {
     return res.json({ success: true });
   }
 
-  res.status(404).json({ error: "File not found" });
+  res.status(404).json({ error: "Not found" });
 });
 
-// ================= START SERVER =================
+// ================= HEALTH =================
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", ai: "ChatGPT enabled" });
+});
+
+// ================= START =================
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 SmartStudent AI running on port ${PORT}`);
 });
