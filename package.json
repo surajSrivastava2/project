@@ -1,25 +1,16 @@
 {
   "name": "smartstudent-ai-backend",
   "version": "1.0.0",
-  "description": "SmartStudent AI Backend - Node.js Express Server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server.js"
   },
-  "keywords": [
-    "ai",
-    "education",
-    "smartstudent",
-    "backend",
-    "express"
-  ],
-  "author": "your-name",
-  "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1"
+    "dotenv": "^16.4.5",
+    "openai": "^4.0.0"
   }
 }
