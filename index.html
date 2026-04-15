@@ -1,0 +1,233 @@
+<script>
+class SmartStudentApp {
+    constructor() {
+        this.token = localStorage.getItem('token');
+        this.user = JSON.parse(localStorage.getItem('user') || '{}');
+        this.init();
+    }
+
+    init() {
+        this.bindEvents();
+        if (this.token) {
+            this.showDashboard();
+        }
+    }
+
+    bindEvents() {
+        // Auth events
+        document.getElementById('authForm').addEventListener('submit', (e) => this.handleLogin(e));
+        document.getElementById('showSignup').addEventListener('click', (e) => this.showSignup(e));
+        document.getElementById('signupFormInner').addEventListener('submit', (e) => this.handleSignup(e));
+        document.getElementById('showLogin').addEventListener('click', (e) => this.showLogin(e));
+
+        // Dashboard events
+        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
+        document.getElementById('attendancePhoto').addEventListener('change', (e) => this.handleAttendance(e));
+        document.getElementById('notesFile').addEventListener('change', (e) => this.handleNotes(e));
+        document.getElementById('generateQuiz').addEventListener('click', () => this.generateQuiz());
+        document.getElementById('solveDoubt').addEventListener('click', () => this.solveDoubt());
+        
+        // Study planner (add textarea and button in HTML if needed)
+    }
+
+    async apiCall(endpoint, data = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.token}`
+        };
+
+        if (data.file) {
+            const formData = new FormData();
+            formData.append('photo', data.file);
+            delete headers['Content-Type'];
+            const response = await fetch(`/api${endpoint}`, {
+                method: 'POST',
+                headers,
+                body: formData
+            });
+            return response.json();
+        }
+
+        const response = await fetch(`/api${endpoint}`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(data)
+        });
+
+        return response.json();
+    }
+
+    showStatus(message, type = 'success') {
+        const status = document.getElementById('statusMsg');
+        status.textContent = message;
+        status.className = `status ${type}`;
+        status.style.display = 'block';
+        setTimeout(() => status.style.display = 'none', 3000);
+    }
+
+    async handleLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            const { token, user } = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            }).then(r => r.json());
+
+            this.token = token;
+            this.user = user;
+            localStorage.setItem('token', token);
+            localStorage.setItem('user', JSON.stringify(user));
+            this.showDashboard();
+        } catch (error) {
+            this.showStatus('Login failed. Check credentials.', 'error');
+        }
+    }
+
+    async handleSignup(e) {
+        e.preventDefault();
+        const email = document.getElementById('signupEmail').value;
+        const password = document.getElementById('signupPassword').value;
+        const name = document.getElementById('studentName').value;
+
+        try {
+            const { token, user } = await fetch('/api/signup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, name })
+            }).then(r => r.json());
+
+            this.token = token;
+            this.user = user;
+            localStorage.setItem('token', token);
+            localStorage.setItem('user', JSON.stringify(user));
+            this.showDashboard();
+        } catch (error) {
+            this.showStatus('Signup failed. Try different email.', 'error');
+        }
+    }
+
+    showSignup(e) {
+        e.preventDefault();
+        document.getElementById('authForm').style.display = 'none';
+        document.getElementById('signupForm').style.display = 'block';
+    }
+
+    showLogin(e) {
+        e.preventDefault();
+        document.getElementById('authForm').style.display = 'block';
+        document.getElementById('signupForm').style.display = 'none';
+    }
+
+    showDashboard() {
+        document.getElementById('authContainer').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+        document.getElementById('userAvatar').textContent = this.user.name.charAt(0).toUpperCase();
+        document.getElementById('userName').textContent = this.user.name;
+    }
+
+    logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        location.reload();
+    }
+
+    async handleAttendance(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const loading = document.getElementById('attendanceLoading');
+        const result = document.getElementById('attendanceResult');
+
+        loading.style.display = 'block';
+        result.style.display = 'none';
+
+        try {
+            const { result: data } = await this.apiCall('/attendance', { file });
+            result.textContent = data;
+            result.style.display = 'block';
+        } catch (error) {
+            this.showStatus('Attendance analysis failed', 'error');
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+
+    async handleNotes(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const loading = document.getElementById('notesLoading');
+        const result = document.getElementById('notesResult');
+
+        loading.style.display = 'block';
+        result.style.display = 'none';
+
+        try {
+            const { result: data } = await this.apiCall('/notes', { file });
+            result.textContent = data;
+            result.style.display = 'block';
+        } catch (error) {
+            this.showStatus('Notes summarization failed', 'error');
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+
+    async generateQuiz() {
+        const topic = document.getElementById('quizTopic').value;
+        if (!topic.trim()) {
+            this.showStatus('Please enter a topic', 'error');
+            return;
+        }
+
+        const loading = document.getElementById('quizLoading');
+        const result = document.getElementById('quizResult');
+
+        loading.style.display = 'block';
+        result.style.display = 'none';
+
+        try {
+            const { result: data } = await this.apiCall('/quiz', { topic });
+            result.textContent = data;
+            result.style.display = 'block';
+        } catch (error) {
+            this.showStatus('Quiz generation failed', 'error');
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+
+    async solveDoubt() {
+        const query = document.getElementById('doubtQuery').value;
+        if (!query.trim()) {
+            this.showStatus('Please enter your doubt', 'error');
+            return;
+        }
+
+        const loading = document.getElementById('doubtLoading');
+        const result = document.getElementById('doubtResult');
+
+        loading.style.display = 'block';
+        result.style.display = 'none';
+
+        try {
+            const { result: data } = await this.apiCall('/doubt', { query });
+            result.textContent = data;
+            result.style.display = 'block';
+        } catch (error) {
+            this.showStatus('Doubt solving failed', 'error');
+        } finally {
+            loading.style.display = 'none';
+        }
+    }
+}
+
+// Initialize app
+const app = new SmartStudentApp();
+</script>
+</body>
+</html>
